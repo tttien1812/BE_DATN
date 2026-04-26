@@ -12,6 +12,8 @@ import {
   analyzeEmotionController,
   uploadAudioController,
   analyzeEmotion,
+  getConversationStatus,
+  getConversationResult,
 } from "../controllers/speechController.js";
 import {
   getSummaryByUser,
@@ -53,7 +55,9 @@ const initApiRoutes = (app) => {
     upload.single("audio"),
     uploadAudioController,
   );
-  router.post("/api/analyze-emotion", analyzeEmotion);
+  // router.post("/api/analyze-emotion", analyzeEmotion);
+  router.get("/api/conversation/:id/status", getConversationStatus);
+  router.get("/api/conversation/:id/result", getConversationResult);
 
   // Dashboard
   router.get("/api/summary", getSummaryByUser);

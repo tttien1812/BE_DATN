@@ -34,6 +34,11 @@ export default (sequelize, DataTypes) => {
       audioUrl: {
         type: DataTypes.STRING,
       },
+      status: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "processing",
+      },
     },
     {
       sequelize,
