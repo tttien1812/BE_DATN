@@ -1,8 +1,5 @@
 import {
-  getSummaryByUserService,
-  getDetailsByUserService,
-  getDetailsGroupedByDateService,
-  getSentimentDistributionByUserService,
+  getDashboardDailyService,
   getMonthlyKpiService,
   getInsightService,
   //admin
@@ -10,109 +7,27 @@ import {
   getAdminUserDetailService,
 } from "../services/dashboardService.js";
 
-// 🔥 SUMMARY API
-const getSummaryByUser = async (req, res) => {
+const getDashboardDaily = async (req, res) => {
   try {
     const { userId, fromDate, toDate } = req.query;
 
     if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getSummaryByUserService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Summary Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-
-// 🔥 DETAILS API
-const getDetailsByUser = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getDetailsByUserService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Details Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-
-// 🔥 GROUP API
-const getDetailsGroupedByDate = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getDetailsGroupedByDateService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Group Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-const getSentimentDistribution = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
+      return res.status(200).json({
         errCode: 1,
         message: "Missing userId",
       });
     }
 
-    const data = await getSentimentDistributionByUserService(
-      userId,
-      fromDate,
-      toDate,
-    );
+    const data = await getDashboardDailyService(userId, fromDate, toDate);
 
     return res.status(200).json({
       errCode: 0,
+      message: "OK",
       data,
     });
   } catch (error) {
-    console.error("Sentiment Distribution Error:", error);
+    console.error("getDashboardDaily error:", error);
+
     return res.status(500).json({
       errCode: -1,
       message: "Server error",
@@ -212,11 +127,8 @@ const getAdminUserDetail = async (req, res) => {
 };
 
 export {
-  getSummaryByUser,
-  getDetailsByUser,
-  getDetailsGroupedByDate,
   getAdminDashboard,
-  getSentimentDistribution,
+  getDashboardDaily,
   getMonthlyKpi,
   getInsight,
   getAdminUserDetail,

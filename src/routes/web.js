@@ -16,14 +16,11 @@ import {
   getConversationResult,
 } from "../controllers/speechController.js";
 import {
-  getSummaryByUser,
-  getDetailsByUser,
-  getDetailsGroupedByDate,
-  getSentimentDistribution,
   getMonthlyKpi,
   getInsight,
   getAdminDashboard,
   getAdminUserDetail,
+  getDashboardDaily,
 } from "../controllers/dashboardController.js";
 import upload from "../middleware/upload.js";
 import {
@@ -60,10 +57,7 @@ const initApiRoutes = (app) => {
   router.get("/api/conversation/:id/result", getConversationResult);
 
   // Dashboard
-  router.get("/api/summary", getSummaryByUser);
-  router.get("/api/details", getDetailsByUser);
-  router.get("/api/group-by-date", getDetailsGroupedByDate);
-  router.get("/api/sentiment-distribution", getSentimentDistribution);
+  router.get("/api/dashboard-daily", getDashboardDaily);
   router.get("/api/monthly-kpi", getMonthlyKpi);
   router.get("/api/insight", getInsight);
   router.get("/api/admin-dashboard", getAdminDashboard);

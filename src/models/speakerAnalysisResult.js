@@ -22,6 +22,12 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      role: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "unknown",
+      },
+
       sentiment: {
         type: DataTypes.STRING,
         allowNull: false,
