@@ -26,21 +26,12 @@ export default (sequelize, DataTypes) => {
       score: {
         type: DataTypes.FLOAT,
       },
-      voiceTone: {
-        type: DataTypes.STRING,
-      },
-      emotionDetail: {
-        type: DataTypes.JSON,
-        allowNull: true,
-      },
       confidence: {
         type: DataTypes.FLOAT,
         allowNull: true,
       },
-      processingTime: {
-        type: DataTypes.FLOAT,
-        allowNull: true,
-      },
+      customerScore: { type: DataTypes.FLOAT, allowNull: true },
+      staffScore: { type: DataTypes.FLOAT, allowNull: true },
     },
     {
       sequelize,

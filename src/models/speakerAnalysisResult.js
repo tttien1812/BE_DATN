@@ -41,21 +41,7 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.FLOAT,
       },
 
-      voiceTone: {
-        type: DataTypes.STRING,
-      },
-
-      emotionDetail: {
-        type: DataTypes.JSON,
-        allowNull: true,
-      },
-
       confidence: {
-        type: DataTypes.FLOAT,
-        allowNull: true,
-      },
-
-      processingTime: {
         type: DataTypes.FLOAT,
         allowNull: true,
       },

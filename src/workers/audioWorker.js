@@ -3,6 +3,7 @@ import IORedis from "ioredis";
 import {
   handleUploadAudioService,
   handleAnalyzeEmotionService,
+  handleAnalyzeVoiceToneService,
 } from "../services/application/audioPipelineService.js";
 import db from "../models/index.js";
 
@@ -41,6 +42,24 @@ const worker = new Worker(
 
       if (uploadRes.errCode !== 0) {
         throw new Error(uploadRes.message);
+      }
+
+      /* =====================================
+   STEP 1.5 AUDIO TONE ANALYSIS
+===================================== */
+      const toneStart = Date.now();
+
+      const toneRes = await handleAnalyzeVoiceToneService(
+        conversationId,
+        audioPath,
+      );
+
+      const toneTime = ((Date.now() - toneStart) / 1000).toFixed(2);
+
+      console.log(`⏱ STEP 1.5 Voice Tone: ${toneTime}s`);
+
+      if (toneRes.errCode !== 0) {
+        throw new Error(toneRes.message);
       }
 
       /* =====================================

@@ -8,6 +8,17 @@ const weights = {
   disgust: -0.9,
 };
 
+const voiceWeights = {
+  happy: 0.9,
+  surprise: 0.4,
+  neutral: 0,
+
+  sad: -0.5,
+  fear: -0.4,
+  angry: -0.7,
+  disgust: -0.6,
+};
+
 const normalizeEmotionObject = (obj = {}) => {
   const keys = [
     "happy",
@@ -59,20 +70,6 @@ const normalizeEmotionObject = (obj = {}) => {
   return cleaned;
 };
 
-// const calculateFinalScore = (emotionDetail = {}) => {
-//   const sum = Object.values(emotionDetail).reduce((a, b) => a + b, 0);
-
-//   if (!sum) return 0.5;
-
-//   let raw = 0;
-//   for (let key in emotionDetail) {
-//     const normalized = emotionDetail[key] / sum;
-//     raw += normalized * (weights[key] || 0);
-//   }
-
-//   return Math.max(0, Math.min(1, (raw + 1) / 2));
-// };
-
 const calculateFinalScore = (emotionDetail = {}) => {
   const normalized = normalizeEmotionObject(emotionDetail);
 
@@ -80,6 +77,23 @@ const calculateFinalScore = (emotionDetail = {}) => {
 
   for (let key in normalized) {
     raw += normalized[key] * (weights[key] || 0);
+  }
+
+  const score = Math.max(0, Math.min(1, (raw + 1) / 2));
+
+  return {
+    score,
+    emotions: normalized,
+  };
+};
+
+const calculateVoiceScore = (emotionDetail = {}) => {
+  const normalized = normalizeEmotionObject(emotionDetail);
+
+  let raw = 0;
+
+  for (let key in normalized) {
+    raw += normalized[key] * (voiceWeights[key] || 0);
   }
 
   const score = Math.max(0, Math.min(1, (raw + 1) / 2));
@@ -98,11 +112,33 @@ const classifySentimentLevel = (score) => {
   return "very_positive";
 };
 
+const mapToneEmotionToScore = (emotion = "neutral", confidence = 1) => {
+  const baseMap = {
+    happy: 0.9,
+    surprise: 0.72,
+    neutral: 0.5,
+    sad: 0.25,
+    fear: 0.2,
+    angry: 0.1,
+    disgust: 0.08,
+  };
+
+  const base = baseMap[emotion] ?? 0.5;
+  const conf = Number(confidence || 0);
+
+  // confidence cao thì score sát emotion hơn
+  const score = 0.5 + (base - 0.5) * conf;
+
+  return +score.toFixed(4);
+};
+
 const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
   const lower = (text || "").toLowerCase().trim();
 
   let staffScore = 0;
   let customerScore = 0;
+
+  const DIFF_THRESHOLD = 3;
 
   /* =========================
      STAFF RULES
@@ -211,40 +247,63 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
     "được rồi",
   ];
 
-  if (
-    lower.length < 25 &&
-    shortReplies.some((item) => lower.includes(item)) &&
-    staffScore === 0 &&
-    customerScore === 0
-  ) {
-    // nếu AI đã xác định đúng thì dùng luôn
+  // if (
+  //   lower.length < 25 &&
+  //   shortReplies.some((item) => lower.includes(item)) &&
+  //   staffScore === 0 &&
+  //   customerScore === 0
+  // ) {
+  //   // nếu AI đã xác định đúng thì dùng luôn
+  //   if (aiRole === "staff" || aiRole === "customer") {
+  //     return aiRole;
+  //   }
+
+  //   // fallback cứng: mặc định customer
+  //   return "customer";
+  // }
+
+  const isShort =
+    lower.length < 25 && shortReplies.some((item) => lower.includes(item));
+
+  if (isShort && staffScore === 0 && customerScore === 0) {
+    // ưu tiên AI
     if (aiRole === "staff" || aiRole === "customer") {
       return aiRole;
     }
-
-    // fallback cứng: mặc định customer
     return "customer";
   }
 
-  /* =========================
-     DECISION LOGIC
-  ========================= */
+  const diff = staffScore - customerScore;
 
-  // chỉ cần hơn 1 điểm là đủ
-  if (staffScore > customerScore) {
+  // 🔥 nếu rule KHÔNG đủ mạnh → tin AI
+  if (
+    Math.abs(diff) < DIFF_THRESHOLD &&
+    (aiRole === "staff" || aiRole === "customer")
+  ) {
+    return aiRole;
+  }
+
+  // 🔥 rule đủ mạnh mới override AI
+  if (diff >= DIFF_THRESHOLD) {
     return "staff";
   }
 
-  if (customerScore > staffScore) {
+  if (diff <= -DIFF_THRESHOLD) {
     return "customer";
   }
 
-  /* =========================
-     AI FALLBACK
-  ========================= */
-  if (aiRole === "staff" || aiRole === "customer") {
-    return aiRole;
-  }
+  // // chỉ cần hơn 1 điểm là đủ
+  // if (staffScore > customerScore) {
+  //   return "staff";
+  // }
+
+  // if (customerScore > staffScore) {
+  //   return "customer";
+  // }
+
+  // if (aiRole === "staff" || aiRole === "customer") {
+  //   return aiRole;
+  // }
 
   /* =========================
      HARD FALLBACK
@@ -275,6 +334,8 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
 export {
   calculateFinalScore,
   classifySentimentLevel,
+  calculateVoiceScore,
   detectHardRoleV2,
   normalizeEmotionObject,
+  mapToneEmotionToScore,
 };

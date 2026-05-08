@@ -1,11 +1,8 @@
-import audioQueue from "./src/queues/audioQueue.js";
+import { predictToneService } from "./src/services/ai/diarizationService.js";
 
 const run = async () => {
-  await audioQueue.add("test-job", {
-    msg: "hello queue",
-  });
-
-  console.log("✅ Job pushed vào queue!");
+  const res = await predictToneService("uploads/1776511328417.ogg");
+  console.log(res);
 };
 
 run();

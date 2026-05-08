@@ -25,6 +25,8 @@ const analyzeEmotionService = async (input) => {
   }
 
   try {
+    console.log("\n================ AI INPUT ================");
+    console.log(JSON.stringify(input, null, 2));
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -35,7 +37,7 @@ const analyzeEmotionService = async (input) => {
 Determine business roles between EXACTLY two speakers in a customer service context.
 CRITICAL CONSTRAINTS:
 1. MUST identify ONE "staff" and ONE "customer". These roles are mutually exclusive.
-2. If SPEAKER_0 is "staff", SPEAKER_1 MUST be "customer", and vice versa.
+2. If SPEAKER_00 is "staff", SPEAKER_01 MUST be "customer", and vice versa.
 INTERACTION PATTERNS & DECISION LOGIC:
 - The Staff (Agent): Leads the conversation, acts as the "Information Requester". They ask for phone numbers, addresses, names, or order codes. They explain policies and give instructions (e.g., "Cho em xin...", "Vui lòng đợi em kiểm tra...").
 - The Customer (Client): Acts as the "Information Provider". They describe problems, provide personal details in response to requests, or confirm they have received help.
@@ -51,7 +53,6 @@ Return ONLY valid JSON:
   "overall": {
     "sentiment": "positive | negative | neutral",
     "emotion": "happy | sad | angry | neutral",
-    "voiceTone": "calm | stress | normal",
     "confidence": number,
     "emotions": {
       "happy": number,
@@ -68,9 +69,16 @@ Return ONLY valid JSON:
       "role":"customer | staff",
       "sentiment": "...",
       "emotion": "...",
-      "voiceTone": "...",
       "confidence": number,
-      "emotions": { }
+      "emotions": { 
+        "happy": number,
+        "sad": number,
+        "angry": number,
+        "fear": number,
+        "surprise": number,
+        "disgust": number,
+        "neutral": number
+      }
     }
   }
 }
@@ -82,12 +90,27 @@ Return ONLY valid JSON:
         },
       ],
     });
+    console.log("\n================ RAW RESPONSE ================");
+    console.log(JSON.stringify(response, null, 2));
 
     let content = response.choices?.[0]?.message?.content || "{}";
+
+    console.log("\n================ RAW CONTENT ================");
+    console.log(content);
     content = content.replace(/```json|```/g, "").trim();
-
+    console.log("\n================ CLEAN CONTENT ================");
+    console.log(content);
     const parsed = JSON.parse(content);
+    // 🔥 4. PARSED RESULT
+    console.log("\n================ PARSED RESULT ================");
+    console.log(JSON.stringify(parsed, null, 2));
 
+    // 🔥 5. CHECK ROLE
+    console.log("\n================ ROLE DEBUG ================");
+    const speakers = parsed?.speakers || {};
+    Object.entries(speakers).forEach(([key, val]) => {
+      console.log(`👉 ${key}: role=${val.role}`);
+    });
     return {
       errCode: 0,
       data: parsed,

@@ -9,7 +9,7 @@ import {
 
 const getDashboardDaily = async (req, res) => {
   try {
-    const { userId, fromDate, toDate } = req.query;
+    const { userId, fromDate, toDate, month } = req.query;
 
     if (!userId) {
       return res.status(200).json({
@@ -18,7 +18,12 @@ const getDashboardDaily = async (req, res) => {
       });
     }
 
-    const data = await getDashboardDailyService(userId, fromDate, toDate);
+    const data = await getDashboardDailyService(
+      userId,
+      fromDate,
+      toDate,
+      month,
+    );
 
     return res.status(200).json({
       errCode: 0,
@@ -37,7 +42,7 @@ const getDashboardDaily = async (req, res) => {
 
 const getMonthlyKpi = async (req, res) => {
   try {
-    const { userId } = req.query;
+    const { userId, month } = req.query;
 
     if (!userId) {
       return res.status(400).json({
@@ -46,7 +51,7 @@ const getMonthlyKpi = async (req, res) => {
       });
     }
 
-    const data = await getMonthlyKpiService(userId);
+    const data = await getMonthlyKpiService(userId, month);
 
     return res.status(200).json({
       errCode: 0,
@@ -63,9 +68,9 @@ const getMonthlyKpi = async (req, res) => {
 
 const getInsight = async (req, res) => {
   try {
-    const userId = req.query;
+    const { userId, month } = req.query;
 
-    const data = await getInsightService(userId);
+    const data = await getInsightService(userId, month);
 
     return res.status(200).json({
       errCode: 0,

@@ -1,10 +1,19 @@
 import db from "../models/index.js";
 import { Op, fn, col, literal, Sequelize } from "sequelize";
+import { buildMonthRange, formatMonth } from "../utils/monthFilter.js";
 
 /* =========================
    🔥 HELPER
 ========================= */
-const buildDateFilter = (fromDate, toDate) => {
+const buildDateFilter = (fromDate, toDate, month) => {
+  if (month) {
+    const { start, end } = buildMonthRange(month);
+
+    return {
+      [Op.between]: [start, end],
+    };
+  }
+
   if (fromDate && toDate) {
     return {
       [Op.between]: [new Date(fromDate), new Date(toDate)],
@@ -19,7 +28,13 @@ const buildDateFilter = (fromDate, toDate) => {
     return { [Op.lte]: new Date(toDate) };
   }
 
-  return {};
+  const currentMonth = formatMonth(new Date());
+
+  const { start, end } = buildMonthRange(currentMonth);
+
+  return {
+    [Op.between]: [start, end],
+  };
 };
 
 const getTrendText = (value) => {
@@ -34,8 +49,9 @@ const getSentimentDistributionByUserService = async (
   userId,
   fromDate,
   toDate,
+  month,
 ) => {
-  const dateFilter = buildDateFilter(fromDate, toDate);
+  const dateFilter = buildDateFilter(fromDate, toDate, month);
 
   const result = await db.Conversation.findAll({
     attributes: [
@@ -105,8 +121,8 @@ const getSentimentDistributionByUserService = async (
   }));
 };
 
-const getDashboardDailyService = async (userId, fromDate, toDate) => {
-  const dateFilter = buildDateFilter(fromDate, toDate);
+const getDashboardDailyService = async (userId, fromDate, toDate, month) => {
+  const dateFilter = buildDateFilter(fromDate, toDate, month);
 
   const result = await db.Conversation.findAll({
     attributes: [
@@ -116,19 +132,7 @@ const getDashboardDailyService = async (userId, fromDate, toDate) => {
 
       [fn("AVG", col("analysis.score")), "avgScore"],
 
-      [
-        fn(
-          "AVG",
-          Sequelize.literal(`
-            CASE 
-              WHEN SpeakerAnalysisResult.role = 'customer' 
-              THEN SpeakerAnalysisResult.score
-              ELSE NULL
-            END
-          `),
-        ),
-        "customerScore",
-      ],
+      [fn("AVG", col("analysis.customerScore")), "customerScore"],
 
       [
         Sequelize.literal(`
@@ -168,11 +172,6 @@ const getDashboardDailyService = async (userId, fromDate, toDate) => {
         as: "analysis",
         attributes: [],
       },
-      {
-        model: db.SpeakerAnalysisResult,
-        as: "SpeakerAnalysisResult",
-        attributes: [],
-      },
     ],
 
     where: {
@@ -201,16 +200,31 @@ const getDashboardDailyService = async (userId, fromDate, toDate) => {
   }));
 };
 
-const getMonthlyKpiService = async (userId) => {
-  const now = new Date();
+const getMonthlyKpiService = async (userId, month) => {
+  // const now = new Date();
 
-  // 🔥 tháng hiện tại
-  const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // // 🔥 tháng hiện tại
+  // const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // const endCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  // // 🔥 tháng trước
+  // const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  // const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+  // 🔥 tháng đang xem
+  const selectedMonth = month || formatMonth(new Date());
+
+  const { start: startCurrentMonth, end: endCurrentMonth } =
+    buildMonthRange(selectedMonth);
 
   // 🔥 tháng trước
-  const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+  const currentDate = new Date(startCurrentMonth);
+
+  currentDate.setMonth(currentDate.getMonth() - 1);
+
+  const lastMonth = formatMonth(currentDate);
+
+  const { start: startLastMonth, end: endLastMonth } =
+    buildMonthRange(lastMonth);
 
   /* =========================
      🔥 CURRENT MONTH
@@ -304,13 +318,13 @@ const getMonthlyKpiService = async (userId) => {
   };
 };
 
-const getInsightService = async (userId) => {
+const getInsightService = async (userId, month) => {
   const insights = [];
 
   /* =========================
      🔥 1. KPI (audio + score)
   ========================= */
-  const kpi = await getMonthlyKpiService(userId);
+  const kpi = await getMonthlyKpiService(userId, month);
 
   const growthText = getTrendText(kpi.growth);
 
@@ -325,7 +339,7 @@ const getInsightService = async (userId) => {
     insights.push({
       type: "danger",
       message:
-        "Điểm trung bình của bạn đang thấp, cần cải thiện cách giao tiếp",
+        "Điểm trung bình của bạn đang thấp, cần cải thiện! Hãy xem lại các cuộc hội thoại gần đây để tìm ra vấn đề và cải thiện chất lượng phục vụ khách hàng.",
     });
   } else if (kpi.avgScore < 0.6) {
     insights.push({
@@ -342,17 +356,47 @@ const getInsightService = async (userId) => {
   /* =========================
      🔥 2. TOP VẤN ĐỀ
   ========================= */
-  const sentimentData = await getSentimentDistributionByUserService(userId);
+  // const sentimentData = await getSentimentDistributionByUserService(userId);
 
-  let totalNegative = 0;
-  let total = 0;
-
-  sentimentData.forEach((day) => {
-    totalNegative += day.veryNegativeCount + day.negativeCount;
-    total += day.totalRecords;
+  const result = await db.AnalysisResult.findAll({
+    attributes: [
+      [fn("COUNT", col("AnalysisResult.id")), "total"],
+      [
+        Sequelize.literal(`
+        SUM(CASE WHEN sentiment IN ('negative','very_negative') THEN 1 ELSE 0 END)
+      `),
+        "negative",
+      ],
+      [
+        Sequelize.literal(`
+        SUM(CASE WHEN AnalysisResult.sentiment IN ('positive','very_positive') THEN 1 ELSE 0 END)
+      `),
+        "positive",
+      ],
+    ],
+    include: [
+      {
+        model: db.Conversation,
+        as: "conversation",
+        attributes: [],
+        where: { userId },
+      },
+    ],
+    raw: true,
   });
 
+  // let totalNegative = 0;
+  // let total = 0;
+  // // sentimentData.forEach((day) => {
+  // //   totalNegative += day.veryNegativeCount + day.negativeCount;
+  // //   total += day.totalRecords;
+  // // });
+
+  const total = Number(result[0]?.total || 0);
+  const totalNegative = Number(result[0]?.negative || 0);
+  const totalPositive = Number(result[0]?.positive || 0);
   const negativeRate = total ? totalNegative / total : 0;
+  const positiveRate = total ? totalPositive / total : 0;
 
   if (negativeRate > 0.4) {
     insights.push({
@@ -374,6 +418,35 @@ const getInsightService = async (userId) => {
       message: "Khách hàng đang có trải nghiệm tích cực 👍",
     });
   }
+  if (positiveRate > 0.7) {
+    insights.push({
+      type: "good",
+      message: `Tỷ lệ khách hàng hài lòng rất cao (${Math.round(
+        positiveRate * 100,
+      )}%), bạn đang làm rất tốt 👍`,
+    });
+  } else if (positiveRate > 0.5) {
+    insights.push({
+      type: "good",
+      message: `Khách hàng nhìn chung hài lòng (${Math.round(
+        positiveRate * 100,
+      )}%), tiếp tục phát huy`,
+    });
+  } else if (positiveRate > 0.3) {
+    insights.push({
+      type: "warning",
+      message: `Tỷ lệ hài lòng chưa cao (${Math.round(
+        positiveRate * 100,
+      )}%), cần cải thiện thêm trải nghiệm`,
+    });
+  } else {
+    insights.push({
+      type: "danger",
+      message: `Khách hàng chưa hài lòng (${Math.round(
+        positiveRate * 100,
+      )}%), cần xem lại`,
+    });
+  }
 
   /* =========================
      🔥 LIMIT (max 3–4 cái thôi)
@@ -383,16 +456,16 @@ const getInsightService = async (userId) => {
 
 //==================ADMIN=========================
 
-const recalcUserMonthlyStats = async (userId) => {
+const recalcUserMonthlyStats = async (userId, conversationDate) => {
   const now = new Date();
 
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}`;
+  // const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  // const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const month = formatMonth(new Date(conversationDate));
+  const { start, end } = buildMonthRange(month);
 
   const result = await db.Conversation.findAll({
     attributes: [
@@ -401,7 +474,7 @@ const recalcUserMonthlyStats = async (userId) => {
       [fn("AVG", col("analysis.score")), "avgScore"],
       [
         Sequelize.literal(`
-          SUM(CASE WHEN analysis.score < 0.4 THEN 1 ELSE 0 END)
+          SUM(CASE WHEN analysis.score <= 0.4 THEN 1 ELSE 0 END)
         `),
         "negativeCount",
       ],
@@ -426,37 +499,14 @@ const recalcUserMonthlyStats = async (userId) => {
 
   const speakerStats = await db.Conversation.findAll({
     attributes: [
-      [
-        Sequelize.literal(`
-          AVG(
-            CASE 
-              WHEN SpeakerAnalysisResult.role = 'customer'
-              THEN SpeakerAnalysisResult.score
-              ELSE NULL
-            END
-          )
-        `),
-        "customerAvg",
-      ],
-
-      [
-        Sequelize.literal(`
-          AVG(
-            CASE 
-              WHEN SpeakerAnalysisResult.role = 'staff'
-              THEN SpeakerAnalysisResult.score
-              ELSE NULL
-            END
-          )
-        `),
-        "staffAvg",
-      ],
+      [fn("AVG", col("analysis.customerScore")), "customerAvg"],
+      [fn("AVG", col("analysis.staffScore")), "staffAvg"],
     ],
 
     include: [
       {
-        model: db.SpeakerAnalysisResult,
-        as: "SpeakerAnalysisResult",
+        model: db.AnalysisResult,
+        as: "analysis",
         attributes: [],
       },
     ],
@@ -510,6 +560,13 @@ const getAdminDashboardService = async ({ sortBy, order, month }) => {
     ],
     raw: true,
   });
+
+  const totalAudio = Number(totalSystem[0]?.totalAudio || 0);
+
+  const totalNegative = Number(totalSystem[0]?.totalNegative || 0);
+
+  const negativeRate =
+    totalAudio > 0 ? Number((totalNegative / totalAudio).toFixed(4)) : 0;
 
   const topAudio = await db.UserMonthlyStats.findAll({
     where: { month },
@@ -574,7 +631,7 @@ const getAdminDashboardService = async ({ sortBy, order, month }) => {
       avgScore: Number(u.avgScore || 0).toFixed(2),
 
       negativeCount: negative,
-      negativeRate: total ? ((negative / total) * 100).toFixed(1) : 0,
+      negativeRate: total ? (negative / total).toFixed(4) : 0,
     };
   });
 
@@ -586,9 +643,10 @@ const getAdminDashboardService = async ({ sortBy, order, month }) => {
     },
 
     totalSystem: {
-      totalAudio: Number(totalSystem[0]?.totalAudio || 0),
+      totalAudio,
       avgScore: Number(totalSystem[0]?.avgScore || 0).toFixed(2),
-      totalNegative: Number(totalSystem[0]?.totalNegative || 0),
+      totalNegative,
+      negativeRate,
     },
 
     top: {
@@ -603,7 +661,7 @@ const getAdminDashboardService = async ({ sortBy, order, month }) => {
 
 const getAdminUserDetailService = async (userId, month) => {
   /* =========================
-     🔥 1. KPI USER (từ bảng stats)
+     🔥 1. KPI USER
   ========================= */
   const userStats = await db.UserMonthlyStats.findOne({
     where: { userId, month },
@@ -648,21 +706,20 @@ const getAdminUserDetailService = async (userId, month) => {
 
   const comparison = {
     scoreDiff: Number((userStats.avgScore - systemAvgScore).toFixed(2)),
-    negativeDiff: Number(
-      ((userNegativeRate - systemNegativeRate) * 100).toFixed(1),
-    ),
+    negativeDiff: Number((userNegativeRate - systemNegativeRate).toFixed(4)),
   };
 
   /* =========================
-     🔥 4. CHART
+     🔥 4. CHART (FIX: dùng final score)
   ========================= */
-  const start = new Date(`${month}-01`);
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  // const start = new Date(`${month}-01`);
+  // const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  const { start, end } = buildMonthRange(month);
 
   const dailyUser = await db.Conversation.findAll({
     attributes: [
       [fn("DATE", col("Conversation.createdAt")), "date"],
-      [fn("AVG", col("analysis.score")), "avgScore"],
+      [fn("AVG", col("analysis.customerScore")), "userScore"], // 🔥 FIX
     ],
     include: [
       {
@@ -682,7 +739,7 @@ const getAdminUserDetailService = async (userId, month) => {
   const dailySystem = await db.Conversation.findAll({
     attributes: [
       [fn("DATE", col("Conversation.createdAt")), "date"],
-      [fn("AVG", col("analysis.score")), "avgScore"],
+      [fn("AVG", col("analysis.customerScore")), "systemScore"], // 🔥 FIX
     ],
     include: [
       {
@@ -703,7 +760,7 @@ const getAdminUserDetailService = async (userId, month) => {
   dailySystem.forEach((item) => {
     chartMap[item.date] = {
       date: item.date,
-      systemScore: Number(item.avgScore || 0),
+      systemScore: Number(item.systemScore || 0),
       userScore: 0,
     };
   });
@@ -717,7 +774,7 @@ const getAdminUserDetailService = async (userId, month) => {
       };
     }
 
-    chartMap[item.date].userScore = Number(item.avgScore || 0);
+    chartMap[item.date].userScore = Number(item.userScore || 0);
   });
 
   const chart = Object.values(chartMap).sort(
@@ -725,58 +782,53 @@ const getAdminUserDetailService = async (userId, month) => {
   );
 
   /* =========================
-     🔥 5. ROLE ANALYSIS (staff/customer)
+     🔥 5. ROLE ANALYSIS (FIX)
   ========================= */
-  const roleData = await db.SpeakerAnalysisResult.findAll({
-    attributes: [
-      "role",
+  // 👉 KHÔNG dùng SpeakerAnalysisResult nữa
+  // 👉 lấy trực tiếp từ AnalysisResult
 
-      [fn("AVG", col("score")), "avgScore"],
+  // const roleData = await db.Conversation.findAll({
+  //   attributes: [
+  //     [fn("AVG", col("analysis.customerScore")), "customerAvgScore"],
+  //     [fn("AVG", col("analysis.staffScore")), "staffAvgScore"],
+  //   ],
+  //   include: [
+  //     {
+  //       model: db.AnalysisResult,
+  //       as: "analysis",
+  //       attributes: [],
+  //     },
+  //   ],
+  //   where: {
+  //     userId,
+  //     createdAt: { [Op.between]: [start, end] },
+  //   },
+  //   raw: true,
+  // });
 
-      [
-        Sequelize.literal(`
-          SUM(
-            CASE
-              WHEN sentiment IN ('negative','very_negative')
-              THEN 1
-              ELSE 0
-            END
-          )
-        `),
-        "negativeCount",
-      ],
+  // const role = roleData[0] || {};
 
-      [fn("COUNT", col("SpeakerAnalysisResult.id")), "total"],
-    ],
+  // const speaker = [
+  //   {
+  //     role: "customer",
+  //     avgScore: Number(Number(role.customerAvgScore || 0).toFixed(2)),
+  //   },
+  //   {
+  //     role: "staff",
+  //     avgScore: Number(Number(role.staffAvgScore || 0).toFixed(2)),
+  //   },
+  // ];
 
-    include: [
-      {
-        model: db.Conversation,
-        as: "conversation",
-        attributes: [],
-        where: {
-          userId,
-          createdAt: { [Op.between]: [start, end] },
-        },
-      },
-    ],
-
-    where: {
-      role: {
-        [Op.in]: ["staff", "customer"],
-      },
+  const speaker = [
+    {
+      role: "customer",
+      avgScore: Number(userStats.customer || 0),
     },
-
-    group: ["role"],
-    raw: true,
-  });
-
-  const speaker = roleData.map((r) => ({
-    role: r.role,
-    avgScore: Number(Number(r.avgScore || 0).toFixed(2)),
-    negativeRate:
-      r.total > 0 ? Number(((r.negativeCount / r.total) * 100).toFixed(1)) : 0,
-  }));
+    {
+      role: "staff",
+      avgScore: Number(userStats.staff || 0),
+    },
+  ];
 
   /* =========================
      RETURN
@@ -787,7 +839,7 @@ const getAdminUserDetailService = async (userId, month) => {
       kpi: {
         totalAudio: userStats.totalConversations,
         avgScore: Number(userStats.avgScore.toFixed(2)),
-        negativeRate: Number(userNegativeRate.toFixed(2)),
+        negativeRate: Number(userNegativeRate.toFixed(4)),
       },
 
       comparison,

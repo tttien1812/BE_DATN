@@ -1,72 +1,72 @@
-// import { exec } from "child_process";
+// import axios from "axios";
 
-// const diarizationService = (audioPath) => {
-//   return new Promise((resolve, reject) => {
-//     exec(
-//       `"venv\\Scripts\\python.exe" ai/diarization.py "${audioPath}"`,
-//       { timeout: 120000 },
-//       (error, stdout, stderr) => {
-//         if (error) {
-//           console.error("Diarization error:", stderr);
-//           return reject(error);
-//         }
-
-//         try {
-//           console.log("RAW PYTHON OUTPUT:\n", stdout); // 🔥 DEBUG
-
-//           const segments = stdout
-//             .split("\n")
-//             .map((line) => {
-//               // 🔥 hỗ trợ nhiều format hơn
-//               const match =
-//                 line.match(/([\d.]+)s\s*-\s*([\d.]+)s:\s*(SPEAKER_\d+)/) ||
-//                 line.match(
-//                   /\[(\d+:\d+.\d+)\s*-->\s*(\d+:\d+.\d+)\]\s*(SPEAKER_\d+)/,
-//                 );
-
-//               if (!match) return null;
-
-//               // 🔥 convert time nếu dạng mm:ss
-//               const toSeconds = (t) => {
-//                 if (t.includes(":")) {
-//                   const [m, s] = t.split(":");
-//                   return parseFloat(m) * 60 + parseFloat(s);
-//                 }
-//                 return parseFloat(t);
-//               };
-
-//               return {
-//                 start: toSeconds(match[1]),
-//                 end: toSeconds(match[2]),
-//                 speaker: match[3],
-//               };
-//             })
-//             .filter(Boolean);
-
-//           resolve(segments);
-//         } catch (e) {
-//           reject(e);
-//         }
+// const diarizationService = async (audioPath) => {
+//   try {
+//     const response = await axios.post(
+//       "http://127.0.0.1:8000/diarize",
+//       {
+//         file_path: audioPath,
+//       },
+//       {
+//         timeout: 120000,
 //       },
 //     );
-//   });
+
+//     const segments = response.data?.segments || [];
+
+//     return segments.map((seg) => ({
+//       start: Number(seg.start),
+//       end: Number(seg.end),
+//       speaker: seg.speaker,
+//     }));
+//   } catch (error) {
+//     console.error(
+//       "Diarization API error:",
+//       error.response?.data || error.message,
+//     );
+
+//     throw error;
+//   }
 // };
 
 // export { diarizationService };
 
 import axios from "axios";
+import {
+  mapToneEmotionToScore,
+  classifySentimentLevel,
+} from "../domain/scoringService.js";
 
+/* ==================================================
+   CONFIG
+================================================== */
+const AI_BASE_URL = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
+
+const aiClient = axios.create({
+  baseURL: AI_BASE_URL,
+  timeout: 120000,
+});
+
+/* ==================================================
+   COMMON ERROR HANDLER
+================================================== */
+const handleAIError = (serviceName, error) => {
+  console.error(
+    `${serviceName} API error:`,
+    error.response?.data || error.message,
+  );
+
+  throw error;
+};
+
+/* ==================================================
+   1. DIARIZATION (GIỮ NGUYÊN CHỨC NĂNG CŨ)
+================================================== */
 const diarizationService = async (audioPath) => {
   try {
-    const response = await axios.post(
-      "http://127.0.0.1:8000/diarize",
-      {
-        file_path: audioPath,
-      },
-      {
-        timeout: 120000,
-      },
-    );
+    const response = await aiClient.post("/diarize", {
+      file_path: audioPath,
+    });
 
     const segments = response.data?.segments || [];
 
@@ -76,13 +76,67 @@ const diarizationService = async (audioPath) => {
       speaker: seg.speaker,
     }));
   } catch (error) {
-    console.error(
-      "Diarization API error:",
-      error.response?.data || error.message,
-    );
-
-    throw error;
+    handleAIError("Diarization", error);
   }
 };
 
-export { diarizationService };
+/* ==================================================
+   2. VOICE TONE / EMOTION
+================================================== */
+// const predictToneService = async (audioPath) => {
+//   try {
+//     const response = await aiClient.post("/predict-tone", {
+//       file_path: audioPath,
+//     });
+
+//     return {
+//       errCode: response.data?.errCode ?? 0,
+//       data: {
+//         emotion: response.data?.emotion || "neutral",
+//         confidence: Number(response.data?.confidence || 0),
+//         detail: response.data?.detail || null,
+//         score: response.data?.score || 0.5,
+//         sentiment: response.data?.sentiment || "neutral",
+//         processingTime: response.data?.processingTime || 0,
+//       },
+//     };
+//   } catch (error) {
+//     handleAIError("Predict Tone", error);
+//   }
+// };
+
+const predictToneService = async (audioPath) => {
+  try {
+    const response = await aiClient.post("/predict-tone", {
+      file_path: audioPath,
+    });
+    console.log("🔥 RAW AI RESPONSE:", response.data);
+
+    const emotion = response.data?.emotion || "neutral";
+    const confidence = Number(response.data?.confidence || 0);
+    const detail = response.data?.detail || null;
+
+    // NEW
+    // const score = mapToneEmotionToScore(emotion, confidence);
+    const score = Number(response.data?.score || 0.5);
+    const emotions = response.data?.emotions || {};
+    const sentiment = classifySentimentLevel(score);
+
+    return {
+      errCode: response.data?.errCode ?? 0,
+      data: {
+        emotion,
+        confidence,
+        detail,
+        score,
+        sentiment,
+        emotions: response.data?.emotions || {},
+        processingTime: response.data?.processingTime || 0,
+      },
+    };
+  } catch (error) {
+    handleAIError("Predict Tone", error);
+  }
+};
+
+export { diarizationService, predictToneService };

@@ -22,6 +22,10 @@ export default (sequelize, DataTypes) => {
         foreignKey: "conversationId",
         as: "SpeakerAnalysisResult",
       });
+      Conversation.hasMany(models.VoiceToneResult, {
+        foreignKey: "conversationId",
+        as: "voiceTone",
+      });
     }
   }
 
