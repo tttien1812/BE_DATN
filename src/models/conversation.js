@@ -12,6 +12,7 @@ export default (sequelize, DataTypes) => {
         as: "analysis",
       });
       Conversation.belongsTo(models.User, {
+        as: "user",
         foreignKey: "userId",
       });
       Conversation.hasMany(models.SpeakerSegment, {

@@ -37,6 +37,8 @@ const worker = new Worker(
       );
 
       const step1Time = ((Date.now() - step1Start) / 1000).toFixed(2);
+      await job.updateProgress(35);
+      await job.log("Upload pipeline done");
 
       console.log(`⏱ STEP 1 Upload Pipeline: ${step1Time}s`);
 
@@ -55,6 +57,8 @@ const worker = new Worker(
       );
 
       const toneTime = ((Date.now() - toneStart) / 1000).toFixed(2);
+      await job.updateProgress(50);
+      await job.log("Voice tone done");
 
       console.log(`⏱ STEP 1.5 Voice Tone: ${toneTime}s`);
 
@@ -70,6 +74,8 @@ const worker = new Worker(
       const emotionRes = await handleAnalyzeEmotionService(conversationId);
 
       const step2Time = ((Date.now() - step2Start) / 1000).toFixed(2);
+      await job.updateProgress(90);
+      await job.log("Emotion analysis done");
 
       console.log(`⏱ STEP 2 Emotion Analysis: ${step2Time}s`);
 
@@ -101,6 +107,9 @@ const worker = new Worker(
       console.log(`✅ Hoàn thành xử lý: ${conversationId}`);
       console.log(`🔥 TOTAL TIME: ${totalTime}s`);
       console.log("---------------------------------------");
+
+      await job.updateProgress(100);
+      await job.log("Job completed");
     } catch (err) {
       const failTime = ((Date.now() - totalStart) / 1000).toFixed(2);
 
@@ -116,7 +125,7 @@ const worker = new Worker(
   },
   {
     connection,
-    concurrency: 1, // giữ 1 để debug trước
+    concurrency: 2, // giữ 1 để debug trước
   },
 );
 

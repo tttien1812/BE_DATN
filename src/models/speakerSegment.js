@@ -36,6 +36,13 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: false,
       },
+      emotion: DataTypes.STRING,
+      emotionScore: DataTypes.FLOAT,
+      emotionConfidence: DataTypes.FLOAT,
+      toneEmotion: DataTypes.STRING,
+      toneScore: DataTypes.FLOAT,
+      toneConfidence: DataTypes.FLOAT,
+      toneDetail: DataTypes.JSON,
     },
     {
       sequelize,

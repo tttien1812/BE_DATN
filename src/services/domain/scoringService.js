@@ -70,6 +70,27 @@ const normalizeEmotionObject = (obj = {}) => {
   return cleaned;
 };
 
+const normalizeToneEmotion = (emotion = "neutral") => {
+  const map = {
+    fearful: "fear",
+    surprised: "surprise",
+  };
+
+  return map[emotion] || emotion || "neutral";
+};
+
+const normalizeToneProbs = (probs = {}) => {
+  return {
+    happy: Number(probs.happy || 0),
+    sad: Number(probs.sad || 0),
+    angry: Number(probs.angry || 0),
+    fear: Number(probs.fear || probs.fearful || 0),
+    surprise: Number(probs.surprise || probs.surprised || 0),
+    disgust: Number(probs.disgust || 0),
+    neutral: Number(probs.neutral || 0),
+  };
+};
+
 const calculateFinalScore = (emotionDetail = {}) => {
   const normalized = normalizeEmotionObject(emotionDetail);
 
@@ -140,36 +161,42 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
 
   const DIFF_THRESHOLD = 3;
 
-  /* =========================
-     STAFF RULES
-  ========================= */
+  const makeResult = (role) => ({
+    role,
+    staffScore,
+    customerScore,
+    diff: staffScore - customerScore,
+  });
+
   const staffRules = [
-    // chào hỏi / hỗ trợ
     { keyword: "xin chào", score: 2 },
     { keyword: "em hỗ trợ", score: 4 },
     { keyword: "bên em", score: 3 },
-    { keyword: "cho em xin", score: 6 },
+
+    { keyword: "cho em xin", score: 7 },
+    { keyword: "anh cho em xin", score: 8 },
+    { keyword: "chị cho em xin", score: 8 },
+    { keyword: "cho em xin cái địa chỉ", score: 9 },
     { keyword: "cho anh xin", score: 6 },
 
-    // xác minh thông tin
     { keyword: "số điện thoại", score: 6 },
-    { keyword: "địa chỉ", score: 7 },
+    { keyword: "địa chỉ", score: 3 },
     { keyword: "họ tên", score: 6 },
     { keyword: "tên khách hàng", score: 7 },
     { keyword: "mã đơn", score: 7 },
     { keyword: "mã đơn hàng", score: 7 },
-    { keyword: "đơn hàng", score: 3 },
+    { keyword: "đơn hàng", score: 2 },
 
-    // xác minh địa chỉ
     { keyword: "tỉnh nào", score: 8 },
+    { keyword: "mình ở tỉnh nào", score: 8 },
     { keyword: "quận huyện", score: 8 },
+    { keyword: "mình ở quận huyện nào", score: 8 },
     { keyword: "huyện nào", score: 7 },
     { keyword: "xã nào", score: 7 },
     { keyword: "phường nào", score: 7 },
-    { keyword: "xã", score: 4 },
-    { keyword: "phường", score: 4 },
+    { keyword: "xã", score: 1 },
+    { keyword: "phường", score: 1 },
 
-    // xử lý đơn
     { keyword: "em kiểm tra", score: 6 },
     { keyword: "kiểm tra giúp", score: 6 },
     { keyword: "xác nhận đơn", score: 7 },
@@ -177,20 +204,17 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
     { keyword: "3 đến 4 ngày", score: 7 },
     { keyword: "nhận hàng", score: 4 },
 
-    // bán hàng
     { keyword: "miễn phí", score: 3 },
     { keyword: "ưu đãi", score: 3 },
     { keyword: "khuyến mãi", score: 3 },
+    { keyword: "mình có lấy thêm không", score: 7 },
+    { keyword: "hỗ trợ mình miễn phí", score: 6 },
 
-    // kiểu nói rất hay gặp ở staff
     { keyword: "đúng không anh", score: 5 },
     { keyword: "đúng không chị", score: 5 },
-    { keyword: "đọc lại nha", score: 6 },
+    { keyword: "đọc lại nha", score: 7 },
   ];
 
-  /* =========================
-     CUSTOMER RULES
-  ========================= */
   const customerRules = [
     { keyword: "cho tôi hỏi", score: 7 },
     { keyword: "cho em hỏi", score: 6 },
@@ -211,15 +235,14 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
     { keyword: "bao giờ", score: 4 },
     { keyword: "ở đâu", score: 4 },
 
-    // kiểu trả lời cung cấp thông tin
+    { keyword: "không ạ", score: 4 },
+    { keyword: "mệt rồi", score: 5 },
     { keyword: "lai châu", score: 3 },
     { keyword: "phong thổ", score: 3 },
     { keyword: "đúng rồi", score: 2 },
+    { keyword: "rồi ạ", score: 2 },
   ];
 
-  /* =========================
-     APPLY RULES
-  ========================= */
   for (const rule of staffRules) {
     if (lower.includes(rule.keyword)) {
       staffScore += rule.score;
@@ -232,10 +255,6 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
     }
   }
 
-  /* =========================
-     SHORT RESPONSE
-     câu ngắn như dạ/vâng/rồi
-  ========================= */
   const shortReplies = [
     "dạ",
     "vâng",
@@ -247,95 +266,118 @@ const detectHardRoleV2 = (text = "", aiRole = "unknown") => {
     "được rồi",
   ];
 
-  // if (
-  //   lower.length < 25 &&
-  //   shortReplies.some((item) => lower.includes(item)) &&
-  //   staffScore === 0 &&
-  //   customerScore === 0
-  // ) {
-  //   // nếu AI đã xác định đúng thì dùng luôn
-  //   if (aiRole === "staff" || aiRole === "customer") {
-  //     return aiRole;
-  //   }
-
-  //   // fallback cứng: mặc định customer
-  //   return "customer";
-  // }
-
   const isShort =
     lower.length < 25 && shortReplies.some((item) => lower.includes(item));
 
   if (isShort && staffScore === 0 && customerScore === 0) {
-    // ưu tiên AI
     if (aiRole === "staff" || aiRole === "customer") {
-      return aiRole;
+      return makeResult(aiRole);
     }
-    return "customer";
+
+    return makeResult("customer");
   }
 
   const diff = staffScore - customerScore;
 
-  // 🔥 nếu rule KHÔNG đủ mạnh → tin AI
   if (
     Math.abs(diff) < DIFF_THRESHOLD &&
     (aiRole === "staff" || aiRole === "customer")
   ) {
-    return aiRole;
+    return makeResult(aiRole);
   }
 
-  // 🔥 rule đủ mạnh mới override AI
   if (diff >= DIFF_THRESHOLD) {
-    return "staff";
+    return makeResult("staff");
   }
 
   if (diff <= -DIFF_THRESHOLD) {
-    return "customer";
+    return makeResult("customer");
   }
 
-  // // chỉ cần hơn 1 điểm là đủ
-  // if (staffScore > customerScore) {
-  //   return "staff";
-  // }
-
-  // if (customerScore > staffScore) {
-  //   return "customer";
-  // }
-
-  // if (aiRole === "staff" || aiRole === "customer") {
-  //   return aiRole;
-  // }
-
-  /* =========================
-     HARD FALLBACK
-     tuyệt đối không unknown nữa
-  ========================= */
-
-  // nếu text có nhiều câu hỏi xác minh => staff
   const questionHints = [
-    "địa chỉ",
     "tỉnh nào",
     "quận huyện",
     "xã nào",
     "phường nào",
     "đúng không",
     "cho em xin",
+    "anh cho em xin",
+    "chị cho em xin",
   ];
 
   const likelyStaff = questionHints.some((item) => lower.includes(item));
 
   if (likelyStaff) {
-    return "staff";
+    return makeResult("staff");
   }
 
-  // cuối cùng mặc định customer
-  return "customer";
+  if (aiRole === "staff" || aiRole === "customer") {
+    return makeResult(aiRole);
+  }
+
+  return makeResult("customer");
+};
+
+const resolveRolePair = (roleMap, scoreMap, aiSpeakers) => {
+  const speakers = Object.keys(roleMap);
+
+  if (speakers.length !== 2) return roleMap;
+
+  const [s1, s2] = speakers;
+
+  const r1 = roleMap[s1];
+  const r2 = roleMap[s2];
+
+  // nếu đã hợp lệ thì giữ nguyên
+  if (
+    (r1 === "staff" && r2 === "customer") ||
+    (r1 === "customer" && r2 === "staff")
+  ) {
+    return roleMap;
+  }
+
+  // nếu bị 2 staff hoặc 2 customer
+  const staffScore1 = scoreMap[s1]?.staffScore || 0;
+  const staffScore2 = scoreMap[s2]?.staffScore || 0;
+
+  const customerScore1 = scoreMap[s1]?.customerScore || 0;
+  const customerScore2 = scoreMap[s2]?.customerScore || 0;
+
+  const confidence1 = Math.abs(staffScore1 - customerScore1);
+  const confidence2 = Math.abs(staffScore2 - customerScore2);
+
+  // speaker nào có dấu hiệu staff mạnh hơn thì làm staff
+  const s1StaffGap = staffScore1 - customerScore1;
+  const s2StaffGap = staffScore2 - customerScore2;
+
+  let staffSpeaker;
+
+  if (Math.abs(s1StaffGap - s2StaffGap) >= 2) {
+    staffSpeaker = s1StaffGap > s2StaffGap ? s1 : s2;
+  } else {
+    // nếu rule không phân biệt rõ thì tin GPT ban đầu
+    staffSpeaker =
+      aiSpeakers[s1]?.role === "staff"
+        ? s1
+        : aiSpeakers[s2]?.role === "staff"
+          ? s2
+          : s1;
+  }
+
+  return {
+    [s1]: staffSpeaker === s1 ? "staff" : "customer",
+    [s2]: staffSpeaker === s2 ? "staff" : "customer",
+  };
 };
 
 export {
   calculateFinalScore,
   classifySentimentLevel,
   calculateVoiceScore,
+  resolveRolePair,
   detectHardRoleV2,
+  normalizeToneProbs,
   normalizeEmotionObject,
+  normalizeToneEmotion,
   mapToneEmotionToScore,
 };

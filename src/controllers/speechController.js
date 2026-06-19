@@ -191,22 +191,49 @@ const getConversationResult = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const transcript = await db.Transcript.findOne({
-      where: { conversationId: id },
-    });
+    // const transcript = await db.Transcript.findOne({
+    //   where: { conversationId: id },
+    // });
 
-    const segments = await db.SpeakerSegment.findAll({
-      where: { conversationId: id },
-      order: [["startTime", "ASC"]], // 👈 thêm cho đúng thứ tự
-    });
+    // const segments = await db.SpeakerSegment.findAll({
+    //   where: { conversationId: id },
+    //   order: [["startTime", "ASC"]], // 👈 thêm cho đúng thứ tự
+    // });
 
-    const analysis = await db.AnalysisResult.findOne({
-      where: { conversationId: id },
-    });
+    // const analysis = await db.AnalysisResult.findOne({
+    //   where: { conversationId: id },
+    // });
 
-    const speakerAnalysis = await db.SpeakerAnalysisResult.findAll({
-      where: { conversationId: id },
-    });
+    // const speakerAnalysis = await db.SpeakerAnalysisResult.findAll({
+    //   where: { conversationId: id },
+    // });
+
+    // const voiceTone = await db.VoiceToneResult.findAll({
+    //   where: { conversationId: id },
+    // });
+    const [transcript, segments, analysis, speakerAnalysis, voiceTone] =
+      await Promise.all([
+        db.Transcript.findOne({
+          where: { conversationId: id },
+        }),
+
+        db.SpeakerSegment.findAll({
+          where: { conversationId: id },
+          order: [["startTime", "ASC"]],
+        }),
+
+        db.AnalysisResult.findOne({
+          where: { conversationId: id },
+        }),
+
+        db.SpeakerAnalysisResult.findAll({
+          where: { conversationId: id },
+        }),
+
+        db.VoiceToneResult.findAll({
+          where: { conversationId: id },
+        }),
+      ]);
 
     return res.json({
       errCode: 0,
@@ -215,6 +242,7 @@ const getConversationResult = async (req, res) => {
         speakerSegments: segments,
         analysis,
         speakerAnalysis,
+        voiceTone,
       },
     });
   } catch (err) {

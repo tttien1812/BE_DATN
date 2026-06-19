@@ -2,6 +2,7 @@ import {
   getHistoryDaysService,
   getHistoryByDateService,
   getHistoryDetailService,
+  getHistoryInsightService,
 } from "../services/historyService.js";
 
 const getHistoryDaysController = async (req, res) => {
@@ -54,8 +55,37 @@ const getHistoryDetailController = async (req, res) => {
   }
 };
 
+const getHistoryInsight = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { scope } = req.query;
+
+    if (!conversationId) {
+      return res.status(400).json({
+        errCode: 1,
+        message: "Missing conversationId",
+      });
+    }
+
+    const result = await getHistoryInsightService(
+      conversationId,
+      scope || "user",
+    );
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("History Insight Controller Error:", error);
+
+    return res.status(500).json({
+      errCode: 1,
+      message: error.message,
+    });
+  }
+};
+
 export {
   getHistoryDaysController,
   getHistoryByDateController,
   getHistoryDetailController,
+  getHistoryInsight,
 };

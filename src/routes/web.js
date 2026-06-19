@@ -21,13 +21,20 @@ import {
   getAdminDashboard,
   getAdminUserDetail,
   getDashboardDaily,
+  getUserInsight,
+  getAdminInsight,
 } from "../controllers/dashboardController.js";
 import upload from "../middleware/upload.js";
 import {
   getHistoryDaysController,
   getHistoryByDateController,
   getHistoryDetailController,
+  getHistoryInsight,
 } from "../controllers/historyController.js";
+import {
+  getAdminConversations,
+  getAdminConversationDetail,
+} from "../controllers/adminConversationController.js";
 
 const router = express.Router();
 
@@ -62,11 +69,18 @@ const initApiRoutes = (app) => {
   router.get("/api/insight", getInsight);
   router.get("/api/admin-dashboard", getAdminDashboard);
   router.get("/api/admin-user-detail", getAdminUserDetail);
+  router.get("/api/admin-insight", getAdminInsight);
+  router.get("/api/user-insight", getUserInsight);
 
   // History
   router.get("/api/history/days", getHistoryDaysController);
   router.get("/api/history/by-date", getHistoryByDateController);
   router.get("/api/history/:id", getHistoryDetailController);
+  router.get("/api/history/:conversationId/insights", getHistoryInsight);
+
+  // Admin Conversation
+  router.get("/api/admin/conversations", getAdminConversations);
+  router.get("/api/admin/conversations/:id", getAdminConversationDetail);
   return app.use("/", router);
 };
 

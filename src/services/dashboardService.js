@@ -45,6 +45,54 @@ const getTrendText = (value) => {
   return "ổn định";
 };
 
+const toPercent = (value) => `${Math.round((Number(value) || 0) * 100)}%`;
+
+const makeInsight = ({
+  scope,
+  group,
+  type,
+  title,
+  metric,
+  message,
+  action,
+}) => ({
+  scope,
+  group,
+  type,
+  title,
+  metric,
+  message,
+  action,
+});
+
+const formatScore = (value) => {
+  return Number(value || 0).toFixed(2);
+};
+
+const getReliabilityType = (avgConfidence, lowConfidenceRate) => {
+  if (avgConfidence < 0.55 || lowConfidenceRate >= 0.3) {
+    return "danger";
+  }
+
+  if (avgConfidence < 0.7 || lowConfidenceRate >= 0.15) {
+    return "warning";
+  }
+
+  return "good";
+};
+
+const getReliabilityTitle = (type, scope = "user") => {
+  if (scope === "admin") {
+    if (type === "danger") return "Độ tin cậy AI toàn hệ thống thấp";
+    if (type === "warning") return "Độ tin cậy AI toàn hệ thống cần theo dõi";
+    return "Độ tin cậy AI toàn hệ thống ổn định";
+  }
+
+  if (type === "danger") return "Độ tin cậy AI đang thấp";
+  if (type === "warning") return "Độ tin cậy AI cần theo dõi";
+  return "Độ tin cậy AI ổn định";
+};
+
 const getSentimentDistributionByUserService = async (
   userId,
   fromDate,
@@ -454,6 +502,313 @@ const getInsightService = async (userId, month) => {
   return insights.slice(0, 4);
 };
 
+const getUserInsightService = async (userId, month) => {
+  const insights = [];
+
+  const selectedMonth = month || formatMonth(new Date());
+  const { start, end } = buildMonthRange(selectedMonth);
+
+  const kpi = await getMonthlyKpiService(userId, selectedMonth);
+
+  const summary = await db.Conversation.findAll({
+    attributes: [
+      [fn("COUNT", col("Conversation.id")), "total"],
+      [fn("AVG", col("analysis.score")), "avgScore"],
+      [fn("AVG", col("analysis.customerScore")), "avgCustomerScore"],
+      [fn("AVG", col("analysis.staffScore")), "avgStaffScore"],
+      [fn("AVG", col("analysis.confidence")), "avgConfidence"],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN analysis.score < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowScoreCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN analysis.customerScore < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowCustomerCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN analysis.staffScore < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowStaffCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN analysis.confidence < 0.6 THEN 1 ELSE 0 END)
+        `),
+        "lowConfidenceCount",
+      ],
+    ],
+    include: [
+      {
+        model: db.AnalysisResult,
+        as: "analysis",
+        attributes: [],
+      },
+    ],
+    where: {
+      userId,
+      createdAt: { [Op.between]: [start, end] },
+    },
+    raw: true,
+  });
+
+  const data = summary[0] || {};
+
+  const total = Number(data.total || 0);
+  const avgScore = Number(data.avgScore || 0);
+  const avgCustomerScore = Number(data.avgCustomerScore || 0);
+  const avgStaffScore = Number(data.avgStaffScore || 0);
+  const lowScoreRate = total ? Number(data.lowScoreCount || 0) / total : 0;
+  const lowCustomerRate = total
+    ? Number(data.lowCustomerCount || 0) / total
+    : 0;
+  const lowStaffRate = total ? Number(data.lowStaffCount || 0) / total : 0;
+  const avgConfidence = Number(data.avgConfidence || 0);
+  const lowConfidenceCount = Number(data.lowConfidenceCount || 0);
+  const lowConfidenceRate = total ? lowConfidenceCount / total : 0;
+
+  const voiceSummary = await db.VoiceToneResult.findAll({
+    attributes: [
+      [fn("COUNT", col("VoiceToneResult.id")), "totalTone"],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN toneScore < 0.35 AND toneConfidence >= 0.6 THEN 1 ELSE 0 END)
+        `),
+        "negativeToneCount",
+      ],
+    ],
+    include: [
+      {
+        model: db.Conversation,
+        as: "conversation",
+        attributes: [],
+        where: {
+          userId,
+          createdAt: { [Op.between]: [start, end] },
+        },
+      },
+    ],
+    raw: true,
+  });
+
+  const toneTotal = Number(voiceSummary[0]?.totalTone || 0);
+  const negativeToneCount = Number(voiceSummary[0]?.negativeToneCount || 0);
+  const negativeToneRate = toneTotal ? negativeToneCount / toneTotal : 0;
+
+  // 1. PERFORMANCE
+  if (avgScore < 0.4) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "performance",
+        type: "danger",
+        title: "Chất lượng cuộc gọi đang giảm",
+        metric: formatScore(avgScore),
+        message:
+          "Kết quả các cuộc gọi trong tháng chưa đạt kỳ vọng và có dấu hiệu ảnh hưởng đến trải nghiệm khách hàng.",
+        action:
+          "Xem lại những cuộc gọi có kết quả thấp để tìm nguyên nhân và rút kinh nghiệm cho các cuộc gọi tiếp theo.",
+      }),
+    );
+  } else if (avgScore < 0.6) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "performance",
+        type: "warning",
+        title: "Hiệu quả cuộc gọi cần cải thiện",
+        metric: formatScore(avgScore),
+        message:
+          "Kết quả làm việc đang ở mức trung bình. Một số cuộc gọi vẫn còn cơ hội để nâng cao chất lượng tư vấn và hỗ trợ khách hàng.",
+        action:
+          "So sánh các cuộc gọi có kết quả tốt và chưa tốt để tìm ra điểm cần cải thiện.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "performance",
+        type: "good",
+        title: "Chất lượng cuộc gọi ổn định",
+        metric: formatScore(avgScore),
+        message:
+          "Kết quả các cuộc gọi trong tháng đang duy trì ở mức tốt và tương đối ổn định.",
+        action: "Tiếp tục duy trì cách trao đổi và xử lý khách hàng hiện tại.",
+      }),
+    );
+  }
+
+  // 2. CUSTOMER EXPERIENCE
+  if (avgCustomerScore < 0.4 || lowCustomerRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "customer",
+        type: "danger",
+        title: "Khách hàng đang có nhiều phản hồi chưa tích cực",
+        metric: toPercent(lowCustomerRate),
+        message:
+          "Một số cuộc gọi cho thấy khách hàng chưa thực sự hài lòng hoặc vẫn còn băn khoăn sau khi trao đổi.",
+        action:
+          "Nghe lại các cuộc gọi có phản hồi chưa tích cực để xác định thời điểm khách hàng bắt đầu mất thiện cảm.",
+      }),
+    );
+  } else if (avgCustomerScore < 0.6 || lowCustomerRate >= 0.15) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "customer",
+        type: "warning",
+        title: "Trải nghiệm khách hàng cần được cải thiện",
+        metric: formatScore(avgCustomerScore),
+        message:
+          "Nhìn chung khách hàng vẫn có phản hồi tích cực, tuy nhiên vẫn xuất hiện một số cuộc gọi chưa đạt chất lượng mong muốn.",
+        action:
+          "Theo dõi các cuộc gọi có dấu hiệu khách hàng chưa hài lòng để kịp thời điều chỉnh cách trao đổi.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "customer",
+        type: "good",
+        title: "Khách hàng nhìn chung hài lòng",
+        metric: formatScore(avgCustomerScore),
+        message:
+          "Phần lớn các cuộc gọi trong tháng cho thấy khách hàng có trải nghiệm tích cực khi trao đổi.",
+        action: "Tiếp tục duy trì cách hỗ trợ và chăm sóc khách hàng hiện tại.",
+      }),
+    );
+  }
+
+  // 3. STAFF QUALITY
+  if (avgStaffScore < 0.4 || lowStaffRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "staff",
+        type: "danger",
+        title: "Kỹ năng xử lý cuộc gọi cần được cải thiện",
+        metric: formatScore(avgStaffScore),
+        message:
+          "Một số cuộc gọi cho thấy quá trình tư vấn hoặc hỗ trợ khách hàng chưa thực sự hiệu quả.",
+        action:
+          "Xem lại các cuộc gọi có kết quả thấp để nhận diện những tình huống cần cải thiện trong quá trình trao đổi.",
+      }),
+    );
+  } else if (avgStaffScore < 0.6 || lowStaffRate >= 0.15) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "staff",
+        type: "warning",
+        title: "Chất lượng xử lý cuộc gọi ở mức trung bình",
+        metric: formatScore(avgStaffScore),
+        message:
+          "Kỹ năng trao đổi với khách hàng đang ở mức chấp nhận được nhưng vẫn còn nhiều cơ hội để nâng cao hiệu quả.",
+        action:
+          "Chú ý các cuộc gọi có kết quả thấp để cải thiện cách phản hồi và xử lý tình huống.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "staff",
+        type: "good",
+        title: "Kỹ năng xử lý cuộc gọi đang phát huy tốt",
+        metric: formatScore(avgStaffScore),
+        message:
+          "Khả năng tư vấn và hỗ trợ khách hàng đang được duy trì ổn định trong phần lớn các cuộc gọi.",
+        action: "Tiếp tục phát huy những cách xử lý hiệu quả đang áp dụng.",
+      }),
+    );
+  }
+
+  // 4. RISK
+  const riskRate = Math.max(negativeToneRate, lowScoreRate);
+
+  if (negativeToneRate >= 0.3 || lowScoreRate >= 0.25) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "risk",
+        type: "danger",
+        title: "Xuất hiện nhiều cuộc gọi cần chú ý",
+        metric: toPercent(riskRate),
+        message:
+          "Hệ thống ghi nhận nhiều cuộc gọi có dấu hiệu căng thẳng hoặc kết quả chưa đạt kỳ vọng.",
+        action:
+          "Ưu tiên xem lại các cuộc gọi được đánh dấu cảnh báo để xác định nguyên nhân.",
+      }),
+    );
+  } else if (negativeToneRate >= 0.15 || lowScoreRate >= 0.15) {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "risk",
+        type: "warning",
+        title: "Có một số cuộc gọi cần theo dõi",
+        metric: toPercent(riskRate),
+        message:
+          "Một số cuộc gọi xuất hiện dấu hiệu khách hàng chưa hài lòng hoặc cuộc trao đổi chưa diễn ra thuận lợi.",
+        action:
+          "Kiểm tra các cuộc gọi được hệ thống cảnh báo để chủ động cải thiện chất lượng.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "user",
+        group: "risk",
+        type: "good",
+        title: "Chưa phát hiện rủi ro đáng chú ý",
+        metric: `${negativeToneCount} tín hiệu`,
+        message:
+          "Phần lớn các cuộc gọi trong tháng diễn ra ổn định và chưa xuất hiện nhiều dấu hiệu bất thường.",
+        action: "Tiếp tục duy trì chất lượng ở các cuộc gọi tiếp theo.",
+      }),
+    );
+  }
+
+  /* =========================
+   5. AI RELIABILITY
+========================= */
+  const reliabilityType = getReliabilityType(avgConfidence, lowConfidenceRate);
+
+  insights.push(
+    makeInsight({
+      scope: "user",
+      group: "reliability",
+      type: reliabilityType,
+      title: getReliabilityTitle(reliabilityType, "user"),
+      metric: toPercent(avgConfidence),
+      message:
+        reliabilityType === "danger"
+          ? `Trong ${total} cuộc gọi được phân tích, có ${lowConfidenceCount} cuộc gọi mà hệ thống chưa đủ tự tin để đưa ra đánh giá chính xác. Những kết quả này chỉ nên được xem là tham khảo và cần được kiểm tra lại trước khi sử dụng để đánh giá hiệu suất hoặc chất lượng cuộc gọi.`
+          : reliabilityType === "warning"
+            ? `Trong ${total} cuộc gọi được phân tích, có ${lowConfidenceCount} cuộc gọi mà hệ thống gặp khó khăn khi đánh giá do nội dung hoặc chất lượng âm thanh chưa đủ rõ ràng. Một số kết quả nên được xem xét lại trước khi đưa ra kết luận chính thức.`
+            : `Độ tin cậy trung bình của hệ thống trong tháng đạt ${toPercent(
+                avgConfidence,
+              )}. Phần lớn các cuộc gọi được phân tích với mức độ ổn định tốt và có thể sử dụng để hỗ trợ theo dõi chất lượng dịch vụ.`,
+      action:
+        reliabilityType === "danger"
+          ? "Ưu tiên nghe lại các cuộc gọi được hệ thống đánh dấu có độ tin cậy thấp trước khi sử dụng kết quả để đánh giá hoặc đưa ra quyết định."
+          : reliabilityType === "warning"
+            ? "Kiểm tra thêm các cuộc gọi có độ tin cậy thấp để đảm bảo kết quả phản ánh đúng nội dung trao đổi thực tế."
+            : "Tiếp tục sử dụng kết quả phân tích như công cụ hỗ trợ theo dõi chất lượng, đồng thời duy trì kiểm tra mẫu định kỳ khi cần.",
+    }),
+  );
+
+  return insights;
+};
+
 //==================ADMIN=========================
 
 const recalcUserMonthlyStats = async (userId, conversationDate) => {
@@ -850,13 +1205,386 @@ const getAdminUserDetailService = async (userId, month) => {
   };
 };
 
+const getAdminInsightService = async (month) => {
+  const insights = [];
+
+  const selectedMonth = month || formatMonth(new Date());
+  const { start, end } = buildMonthRange(selectedMonth);
+
+  const system = await db.UserMonthlyStats.findAll({
+    where: { month: selectedMonth },
+    attributes: [
+      [fn("COUNT", col("id")), "totalUsers"],
+      [fn("SUM", col("totalConversations")), "totalAudio"],
+      [fn("AVG", col("avgScore")), "avgScore"],
+      [fn("SUM", col("negativeCount")), "totalNegative"],
+      [fn("AVG", col("customer")), "avgCustomerScore"],
+      [fn("AVG", col("staff")), "avgStaffScore"],
+
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN avgScore < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowUserCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN avgScore < 0.6 THEN 1 ELSE 0 END)
+        `),
+        "mediumUserCount",
+      ],
+
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN staff < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowStaffUserCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN staff < 0.6 THEN 1 ELSE 0 END)
+        `),
+        "mediumStaffUserCount",
+      ],
+
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN customer < 0.4 THEN 1 ELSE 0 END)
+        `),
+        "lowCustomerUserCount",
+      ],
+      [
+        Sequelize.literal(`
+          SUM(CASE WHEN customer < 0.6 THEN 1 ELSE 0 END)
+        `),
+        "mediumCustomerUserCount",
+      ],
+    ],
+    raw: true,
+  });
+
+  const data = system[0] || {};
+
+  const totalUsers = Number(data.totalUsers || 0);
+  const totalAudio = Number(data.totalAudio || 0);
+
+  const avgScore = Number(data.avgScore || 0);
+  const avgCustomerScore = Number(data.avgCustomerScore || 0);
+  const avgStaffScore = Number(data.avgStaffScore || 0);
+
+  const totalNegative = Number(data.totalNegative || 0);
+
+  const lowUserCount = Number(data.lowUserCount || 0);
+  const mediumUserCount = Number(data.mediumUserCount || 0);
+
+  const lowStaffUserCount = Number(data.lowStaffUserCount || 0);
+  const mediumStaffUserCount = Number(data.mediumStaffUserCount || 0);
+
+  const lowCustomerUserCount = Number(data.lowCustomerUserCount || 0);
+  const mediumCustomerUserCount = Number(data.mediumCustomerUserCount || 0);
+
+  const negativeRate = totalAudio ? totalNegative / totalAudio : 0;
+
+  const lowUserRate = totalUsers ? lowUserCount / totalUsers : 0;
+  const mediumUserRate = totalUsers ? mediumUserCount / totalUsers : 0;
+
+  const lowStaffUserRate = totalUsers ? lowStaffUserCount / totalUsers : 0;
+  const mediumStaffUserRate = totalUsers
+    ? mediumStaffUserCount / totalUsers
+    : 0;
+
+  const lowCustomerUserRate = totalUsers
+    ? lowCustomerUserCount / totalUsers
+    : 0;
+  const mediumCustomerUserRate = totalUsers
+    ? mediumCustomerUserCount / totalUsers
+    : 0;
+
+  const riskRate = Math.max(
+    negativeRate,
+    lowUserRate,
+    lowCustomerUserRate,
+    lowStaffUserRate,
+  );
+
+  const reliability = await db.Conversation.findAll({
+    attributes: [
+      [fn("COUNT", col("Conversation.id")), "totalConversation"],
+      [fn("AVG", col("analysis.confidence")), "avgConfidence"],
+      [
+        Sequelize.literal(`
+        SUM(CASE WHEN analysis.confidence < 0.6 THEN 1 ELSE 0 END)
+      `),
+        "lowConfidenceCount",
+      ],
+    ],
+    include: [
+      {
+        model: db.AnalysisResult,
+        as: "analysis",
+        attributes: [],
+      },
+    ],
+    where: {
+      createdAt: {
+        [Op.between]: [start, end],
+      },
+    },
+    raw: true,
+  });
+
+  const reliabilityData = reliability[0] || {};
+
+  const totalReliabilityConversation = Number(
+    reliabilityData.totalConversation || 0,
+  );
+
+  const avgSystemConfidence = Number(reliabilityData.avgConfidence || 0);
+
+  const lowConfidenceConversationCount = Number(
+    reliabilityData.lowConfidenceCount || 0,
+  );
+
+  const lowConfidenceConversationRate = totalReliabilityConversation
+    ? lowConfidenceConversationCount / totalReliabilityConversation
+    : 0;
+
+  const totalUsersText = totalUsers || 0;
+  const totalAudioText = totalAudio || 0;
+  const negativeRateText = toPercent(negativeRate);
+
+  /* =========================
+     1. PERFORMANCE
+  ========================= */
+  if (avgScore < 0.4 || lowUserRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "performance",
+        type: "danger",
+        title: "Hiệu quả làm việc của đội ngũ đang giảm",
+        metric: `${lowUserCount} nhân viên`,
+        message: `Có ${lowUserCount}/${totalUsersText} nhân viên đang có kết quả cuộc gọi thấp hơn mức mong muốn. Mức hiệu quả trung bình của toàn đội hiện ở mức ${formatScore(avgScore)}.`,
+        action:
+          "Ưu tiên hỗ trợ hoặc rà soát nhóm nhân viên có kết quả thấp để xác định nguyên nhân.",
+      }),
+    );
+  } else if (avgScore < 0.6 || mediumUserRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "performance",
+        type: "warning",
+        title: "Hiệu quả làm việc cần được theo dõi",
+        metric: `${mediumUserCount} nhân viên`,
+        message: `Có ${mediumUserCount}/${totalUsersText} nhân viên đang có kết quả thấp hơn mặt bằng chung của đội ngũ.`,
+        action:
+          "Theo dõi xu hướng chất lượng cuộc gọi của nhóm nhân viên này trong thời gian tới.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "performance",
+        type: "good",
+        title: "Hiệu quả làm việc của đội ngũ ổn định",
+        metric: `${totalUsersText} nhân viên`,
+        message: `Phần lớn nhân viên đang duy trì chất lượng cuộc gọi tốt. Mức hiệu quả trung bình toàn hệ thống hiện đạt ${formatScore(avgScore)}.`,
+        action:
+          "Tiếp tục duy trì hoạt động theo dõi định kỳ và chia sẻ kinh nghiệm từ các nhân viên có kết quả tốt.",
+      }),
+    );
+  }
+
+  /* =========================
+     2. CUSTOMER EXPERIENCE
+  ========================= */
+  if (
+    negativeRate >= 0.3 ||
+    avgCustomerScore < 0.4 ||
+    lowCustomerUserRate >= 0.3
+  ) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "customer",
+        type: "danger",
+        title: "Trải nghiệm khách hàng đang có dấu hiệu suy giảm",
+        metric: `${totalNegative} cuộc gọi`,
+        message: `Trong tháng đã ghi nhận ${totalNegative}/${totalAudioText} cuộc gọi có phản hồi chưa tích cực từ khách hàng. Đồng thời có ${lowCustomerUserCount}/${totalUsersText} nhân viên thường xuyên xuất hiện trong các cuộc gọi có mức độ hài lòng thấp.`,
+        action:
+          "Ưu tiên rà soát các cuộc gọi có phản hồi tiêu cực để xác định nguyên nhân và xây dựng kế hoạch cải thiện.",
+      }),
+    );
+  } else if (
+    negativeRate >= 0.15 ||
+    avgCustomerScore < 0.6 ||
+    mediumCustomerUserRate >= 0.3
+  ) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "customer",
+        type: "warning",
+        title: "Trải nghiệm khách hàng cần được cải thiện",
+        metric: `${mediumCustomerUserCount} nhân viên`,
+        message: `Khoảng ${negativeRateText} cuộc gọi trong tháng xuất hiện dấu hiệu khách hàng chưa hài lòng. Một số nhân viên cũng đang có kết quả thấp hơn kỳ vọng trong việc tạo trải nghiệm tích cực cho khách hàng.`,
+        action:
+          "Theo dõi các nhóm cuộc gọi có phản hồi chưa tích cực để phát hiện sớm các vấn đề phát sinh.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "customer",
+        type: "good",
+        title: "Khách hàng nhìn chung hài lòng",
+        metric: negativeRateText,
+        message: `Tỷ lệ cuộc gọi có phản hồi chưa tích cực đang ở mức thấp (${negativeRateText}). Phần lớn khách hàng có trải nghiệm ổn định trong quá trình trao đổi.`,
+        action:
+          "Tiếp tục duy trì chất lượng phục vụ và theo dõi các trường hợp bất thường.",
+      }),
+    );
+  }
+
+  /* =========================
+     3. STAFF QUALITY
+  ========================= */
+  if (avgStaffScore < 0.4 || lowStaffUserRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "staff",
+        type: "danger",
+        title: "Một số nhân viên cần được hỗ trợ",
+        metric: `${lowStaffUserCount} nhân viên`,
+        message: `Có ${lowStaffUserCount}/${totalUsersText} nhân viên thường xuyên xuất hiện trong các cuộc gọi có chất lượng xử lý thấp.`,
+        action:
+          "Kiểm tra các cuộc gọi gần đây của nhóm nhân viên này để xác định kỹ năng cần cải thiện.",
+      }),
+    );
+  } else if (
+    avgStaffScore < 0.6 ||
+    mediumStaffUserRate >= 0.3 ||
+    lowStaffUserCount > 0
+  ) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "staff",
+        type: "warning",
+        title: "Chất lượng xử lý cuộc gọi chưa đồng đều",
+        metric: `${mediumStaffUserCount} nhân viên`,
+        message: `Có ${mediumStaffUserCount}/${totalUsersText} nhân viên đang có kết quả thấp hơn mặt bằng chung của đội ngũ.`,
+        action:
+          "Theo dõi thêm hiệu suất và hỗ trợ đào tạo đối với nhóm nhân viên có kết quả thấp.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "staff",
+        type: "good",
+        title: "Đội ngũ đang duy trì chất lượng tốt",
+        metric: `${totalUsersText} nhân viên`,
+        message: `Phần lớn nhân viên đang xử lý cuộc gọi hiệu quả và duy trì chất lượng ổn định.`,
+        action:
+          "Tiếp tục duy trì hoạt động đánh giá và chia sẻ kinh nghiệm nội bộ.",
+      }),
+    );
+  }
+
+  /* =========================
+     4. RISK
+  ========================= */
+  if (riskRate >= 0.3 || negativeRate >= 0.3) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "risk",
+        type: "danger",
+        title: "Nhiều cuộc gọi cần được rà soát",
+        metric: `${totalNegative} cuộc gọi`,
+        message: `Hệ thống ghi nhận ${totalNegative} cuộc gọi có dấu hiệu khách hàng chưa hài lòng hoặc chất lượng trao đổi chưa đạt kỳ vọng. Mức cảnh báo hiện đang ở ngưỡng cao.`,
+        action:
+          "Ưu tiên kiểm tra các cuộc gọi được hệ thống cảnh báo để phát hiện sớm các vấn đề về quy trình hoặc kỹ năng xử lý.",
+      }),
+    );
+  } else if (riskRate >= 0.15 || negativeRate >= 0.15 || totalNegative > 0) {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "risk",
+        type: "warning",
+        title: "Xuất hiện một số tín hiệu cần theo dõi",
+        metric: `${totalNegative} cuộc gọi`,
+        message: `Hệ thống phát hiện ${totalNegative} cuộc gọi có dấu hiệu bất thường hoặc phản hồi chưa tích cực từ khách hàng.`,
+        action:
+          "Theo dõi xu hướng trong các tuần tiếp theo để ngăn ngừa rủi ro gia tăng.",
+      }),
+    );
+  } else {
+    insights.push(
+      makeInsight({
+        scope: "admin",
+        group: "risk",
+        type: "good",
+        title: "Chưa phát hiện rủi ro đáng chú ý",
+        metric: "0 cuộc gọi",
+        message:
+          "Phần lớn các cuộc gọi đang diễn ra ổn định và chưa xuất hiện nhiều tín hiệu tiêu cực đáng kể.",
+        action: "Tiếp tục duy trì hoạt động giám sát chất lượng định kỳ.",
+      }),
+    );
+  }
+
+  /* =========================
+   5. AI RELIABILITY
+========================= */
+  const reliabilityType = getReliabilityType(
+    avgSystemConfidence,
+    lowConfidenceConversationRate,
+  );
+
+  insights.push(
+    makeInsight({
+      scope: "admin",
+      group: "reliability",
+      type: reliabilityType,
+      title: getReliabilityTitle(reliabilityType, "admin"),
+      metric: toPercent(avgSystemConfidence),
+      message:
+        reliabilityType === "danger"
+          ? `Trong ${totalReliabilityConversation} cuộc gọi được phân tích, có ${lowConfidenceConversationCount} cuộc gọi mà hệ thống chưa đủ tự tin để đưa ra đánh giá chính xác. Các kết quả này không nên được dùng trực tiếp để đánh giá nhân viên nếu chưa được kiểm tra lại.`
+          : reliabilityType === "warning"
+            ? `Trong ${totalReliabilityConversation} cuộc gọi được phân tích, có ${lowConfidenceConversationCount} cuộc gọi mà hệ thống gặp khó khăn khi đánh giá do nội dung hoặc chất lượng âm thanh chưa đủ rõ ràng. Một phần kết quả nên được đối chiếu lại trước khi đưa ra kết luận chính thức.`
+            : `Độ tin cậy trung bình của hệ thống đạt ${toPercent(
+                avgSystemConfidence,
+              )}. Phần lớn các cuộc gọi được phân tích với mức độ ổn định tốt và có thể dùng để hỗ trợ theo dõi chất lượng dịch vụ.`,
+      action:
+        reliabilityType === "danger"
+          ? "Ưu tiên nghe lại các cuộc gọi có độ tin cậy thấp trước khi sử dụng kết quả để đánh giá nhân viên hoặc lập báo cáo quản trị."
+          : reliabilityType === "warning"
+            ? "Kiểm tra thêm các cuộc gọi có độ tin cậy thấp, đặc biệt là những trường hợp có kết quả bất thường."
+            : "Tiếp tục sử dụng hệ thống như công cụ hỗ trợ theo dõi chất lượng, đồng thời duy trì kiểm tra mẫu định kỳ khi cần.",
+    }),
+  );
+
+  return insights;
+};
+
 export {
   getSentimentDistributionByUserService,
   getDashboardDailyService,
   getMonthlyKpiService,
   getInsightService,
+  getUserInsightService,
   //==================ADMIN=========================
   recalcUserMonthlyStats,
   getAdminDashboardService,
   getAdminUserDetailService,
+  getAdminInsightService,
 };

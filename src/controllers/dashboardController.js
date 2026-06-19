@@ -2,9 +2,11 @@ import {
   getDashboardDailyService,
   getMonthlyKpiService,
   getInsightService,
+  getUserInsightService,
   //admin
   getAdminDashboardService,
   getAdminUserDetailService,
+  getAdminInsightService,
 } from "../services/dashboardService.js";
 
 const getDashboardDaily = async (req, res) => {
@@ -85,6 +87,26 @@ const getInsight = async (req, res) => {
   }
 };
 
+const getUserInsight = async (req, res) => {
+  try {
+    const { userId, month } = req.query;
+
+    const data = await getUserInsightService(userId, month);
+
+    return res.status(200).json({
+      errCode: 0,
+      data,
+    });
+  } catch (e) {
+    console.error("Get User Insight Error:", e);
+
+    return res.status(500).json({
+      errCode: 1,
+      message: e.message,
+    });
+  }
+};
+
 //========================ADMIN API========================
 const getAdminDashboard = async (req, res) => {
   try {
@@ -131,10 +153,32 @@ const getAdminUserDetail = async (req, res) => {
   }
 };
 
+const getAdminInsight = async (req, res) => {
+  try {
+    const { month } = req.query;
+
+    const data = await getAdminInsightService(month);
+
+    return res.status(200).json({
+      errCode: 0,
+      data,
+    });
+  } catch (e) {
+    console.error("Get Admin Insight Error:", e);
+
+    return res.status(500).json({
+      errCode: 1,
+      message: e.message,
+    });
+  }
+};
+
 export {
   getAdminDashboard,
   getDashboardDaily,
   getMonthlyKpi,
   getInsight,
   getAdminUserDetail,
+  getUserInsight,
+  getAdminInsight,
 };

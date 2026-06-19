@@ -6,6 +6,7 @@ import cors from "cors";
 
 import db from "./src/models/index.js";
 import initApiRoutes from "./src/routes/web.js";
+import { serverAdapter } from "./src/config/bullBoard.js";
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Static folder
 app.use("/uploads", express.static("uploads"));
+app.use("/admin/queues", serverAdapter.getRouter());
 
 // Routes
 initApiRoutes(app);
