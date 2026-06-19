@@ -12,6 +12,7 @@ export default (sequelize, DataTypes) => {
         as: "analysis",
       });
       Conversation.belongsTo(models.User, {
+        as: "user",
         foreignKey: "userId",
       });
       Conversation.hasMany(models.SpeakerSegment, {
@@ -21,6 +22,10 @@ export default (sequelize, DataTypes) => {
       Conversation.hasMany(models.SpeakerAnalysisResult, {
         foreignKey: "conversationId",
         as: "SpeakerAnalysisResult",
+      });
+      Conversation.hasMany(models.VoiceToneResult, {
+        foreignKey: "conversationId",
+        as: "voiceTone",
       });
     }
   }
@@ -33,6 +38,11 @@ export default (sequelize, DataTypes) => {
       },
       audioUrl: {
         type: DataTypes.STRING,
+      },
+      status: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "processing",
       },
     },
     {

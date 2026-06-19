@@ -41,12 +41,22 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         defaultValue: 0,
       },
+      staff: {
+        type: DataTypes.FLOAT,
+        defaultValue: 0,
+      },
+
+      // 🔥 NEW
+      customer: {
+        type: DataTypes.FLOAT,
+        defaultValue: 0,
+      },
     },
     {
       sequelize,
       modelName: "UserMonthlyStats",
       tableName: "UserMonthlyStats",
-    }
+    },
   );
 
   return UserMonthlyStats;

@@ -1,118 +1,40 @@
 import {
-  getSummaryByUserService,
-  getDetailsByUserService,
-  getDetailsGroupedByDateService,
-  getSentimentDistributionByUserService,
+  getDashboardDailyService,
   getMonthlyKpiService,
   getInsightService,
+  getUserInsightService,
   //admin
   getAdminDashboardService,
   getAdminUserDetailService,
+  getAdminInsightService,
 } from "../services/dashboardService.js";
 
-// 🔥 SUMMARY API
-const getSummaryByUser = async (req, res) => {
+const getDashboardDaily = async (req, res) => {
   try {
-    const { userId, fromDate, toDate } = req.query;
+    const { userId, fromDate, toDate, month } = req.query;
 
     if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getSummaryByUserService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Summary Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-
-// 🔥 DETAILS API
-const getDetailsByUser = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getDetailsByUserService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Details Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-
-// 🔥 GROUP API
-const getDetailsGroupedByDate = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
-        errCode: 1,
-        errMessage: "Missing userId",
-      });
-    }
-
-    const data = await getDetailsGroupedByDateService(userId, fromDate, toDate);
-
-    return res.status(200).json({
-      errCode: 0,
-      data,
-    });
-  } catch (e) {
-    console.error("Group Controller Error:", e);
-    return res.status(500).json({
-      errCode: 1,
-      errMessage: "Internal server error",
-    });
-  }
-};
-const getSentimentDistribution = async (req, res) => {
-  try {
-    const { userId, fromDate, toDate } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
+      return res.status(200).json({
         errCode: 1,
         message: "Missing userId",
       });
     }
 
-    const data = await getSentimentDistributionByUserService(
+    const data = await getDashboardDailyService(
       userId,
       fromDate,
       toDate,
+      month,
     );
 
     return res.status(200).json({
       errCode: 0,
+      message: "OK",
       data,
     });
   } catch (error) {
-    console.error("Sentiment Distribution Error:", error);
+    console.error("getDashboardDaily error:", error);
+
     return res.status(500).json({
       errCode: -1,
       message: "Server error",
@@ -122,7 +44,7 @@ const getSentimentDistribution = async (req, res) => {
 
 const getMonthlyKpi = async (req, res) => {
   try {
-    const { userId } = req.query;
+    const { userId, month } = req.query;
 
     if (!userId) {
       return res.status(400).json({
@@ -131,7 +53,7 @@ const getMonthlyKpi = async (req, res) => {
       });
     }
 
-    const data = await getMonthlyKpiService(userId);
+    const data = await getMonthlyKpiService(userId, month);
 
     return res.status(200).json({
       errCode: 0,
@@ -148,9 +70,9 @@ const getMonthlyKpi = async (req, res) => {
 
 const getInsight = async (req, res) => {
   try {
-    const userId = req.query;
+    const { userId, month } = req.query;
 
-    const data = await getInsightService(userId);
+    const data = await getInsightService(userId, month);
 
     return res.status(200).json({
       errCode: 0,
@@ -161,6 +83,26 @@ const getInsight = async (req, res) => {
     return res.status(500).json({
       errCode: 1,
       message: "Error from server",
+    });
+  }
+};
+
+const getUserInsight = async (req, res) => {
+  try {
+    const { userId, month } = req.query;
+
+    const data = await getUserInsightService(userId, month);
+
+    return res.status(200).json({
+      errCode: 0,
+      data,
+    });
+  } catch (e) {
+    console.error("Get User Insight Error:", e);
+
+    return res.status(500).json({
+      errCode: 1,
+      message: e.message,
     });
   }
 };
@@ -211,13 +153,32 @@ const getAdminUserDetail = async (req, res) => {
   }
 };
 
+const getAdminInsight = async (req, res) => {
+  try {
+    const { month } = req.query;
+
+    const data = await getAdminInsightService(month);
+
+    return res.status(200).json({
+      errCode: 0,
+      data,
+    });
+  } catch (e) {
+    console.error("Get Admin Insight Error:", e);
+
+    return res.status(500).json({
+      errCode: 1,
+      message: e.message,
+    });
+  }
+};
+
 export {
-  getSummaryByUser,
-  getDetailsByUser,
-  getDetailsGroupedByDate,
   getAdminDashboard,
-  getSentimentDistribution,
+  getDashboardDaily,
   getMonthlyKpi,
   getInsight,
   getAdminUserDetail,
+  getUserInsight,
+  getAdminInsight,
 };
